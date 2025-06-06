@@ -118,15 +118,14 @@ class DocumentScanner {
             // Configure worker specifically for document scanning
             await worker.setParameters({
                 'tessedit_char_whitelist': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?@#$%^&*()_+-=[]{}|;:\'",.<>?/\\ \n\t',
-                'tessedit_pageseg_mode': '6', // Uniform block of text
+                'tessedit_pageseg_mode': '3', // Auto page segmentation with OSD. Better for general docs.
                 'tessedit_ocr_engine_mode': '2', // LSTM neural net mode
-                'classify_bln_numeric_mode': '1',
-                'textord_really_old_xheight': '1',
-                'textord_min_xheight': '12',
             });
             
-            const { data: { text, confidence } } = await worker.recognize(processedImageData);
+            const { data } = await worker.recognize(processedImageData);
             await worker.terminate();
+
+            const { text, confidence } = data;
             
             console.log(`OCR Confidence: ${confidence}%`);
             
@@ -134,11 +133,10 @@ class DocumentScanner {
                 throw new Error('No text detected in the image. Please ensure the document is clearly visible and well-lit.');
             }
             
-            // Clean and process the text
-            const cleanedText = this.cleanOCRText(text);
-            
-            // Process the extracted text
-            this.processExtractedText(cleanedText);
+            // Set raw text, generate the form from detailed OCR data, and show results
+            this.rawText.value = text;
+            this.generateForm(data);
+            this.showResults();
             
         } catch (error) {
             console.error('OCR Error:', error);
@@ -202,33 +200,17 @@ class DocumentScanner {
     }
     
     cleanOCRText(text) {
+        if (!text) return '';
         return text
-            // Remove extra whitespace
-            .replace(/\s+/g, ' ')
-            // Fix common OCR errors
-            .replace(/[|]/g, 'l')
-            .replace(/[0]/g, 'O')
-            .replace(/[1]/g, 'l')
-            .replace(/rn/g, 'm')
-            .replace(/vv/g, 'w')
-            // Clean up line breaks
+            // Normalize whitespace
+            .replace(/[ \t]+/g, ' ')
+            // Preserve meaningful newlines
             .replace(/\s*\n\s*/g, '\n')
             .trim();
     }
     
-    processExtractedText(text) {
-        // Set raw text
-        this.rawText.value = text;
-        
-        // Generate form from text
-        this.generateForm(text);
-        
-        // Show results
-        this.showResults();
-    }
-    
-    generateForm(text) {
-        const formFields = this.extractFormFields(text);
+    generateForm(data) {
+        const formFields = this.extractFormFields(data);
         this.extractedForm.innerHTML = '';
         
         formFields.forEach((field, index) => {
@@ -260,7 +242,7 @@ class DocumentScanner {
         
         if (formFields.length === 0) {
             const message = document.createElement('p');
-            message.textContent = 'No form fields detected. The extracted text is available in the Raw Text tab.';
+            message.textContent = "Could not automatically detect form fields. The extracted text is available in the 'Raw Text' tab.";
             message.style.textAlign = 'center';
             message.style.color = '#666';
             message.style.fontStyle = 'italic';
@@ -268,124 +250,160 @@ class DocumentScanner {
         }
     }
     
-    extractFormFields(text) {
+    extractFormFields(data) {
+        const { words } = data;
+        if (!words) return [];
         const fields = [];
-        const lines = text.split('\n').filter(line => line.trim());
+        const usedWords = new Set();
         
-        // Enhanced form field patterns with better regex
-        const patterns = [
-            { regex: /(?:full\s*)?name[:\s]*(.+)/i, label: 'Full Name', type: 'text' },
-            { regex: /first\s*name[:\s]*(.+)/i, label: 'First Name', type: 'text' },
-            { regex: /last\s*name[:\s]*(.+)/i, label: 'Last Name', type: 'text' },
-            { regex: /middle\s*(?:name|initial)[:\s]*(.+)/i, label: 'Middle Name', type: 'text' },
-            { regex: /(?:email|e-mail)[:\s]*(.+)/i, label: 'Email', type: 'email' },
-            { regex: /(?:phone|telephone|tel)[:\s]*(.+)/i, label: 'Phone', type: 'tel' },
-            { regex: /(?:mobile|cell)[:\s]*(.+)/i, label: 'Mobile', type: 'tel' },
-            { regex: /address[:\s]*(.+)/i, label: 'Address', type: 'textarea' },
-            { regex: /street[:\s]*(.+)/i, label: 'Street Address', type: 'text' },
-            { regex: /city[:\s]*(.+)/i, label: 'City', type: 'text' },
-            { regex: /state[:\s]*(.+)/i, label: 'State', type: 'text' },
-            { regex: /(?:zip|postal)[:\s]*(.+)/i, label: 'ZIP Code', type: 'text' },
-            { regex: /country[:\s]*(.+)/i, label: 'Country', type: 'text' },
-            { regex: /(?:birth\s*)?date[:\s]*(.+)/i, label: 'Date', type: 'date' },
-            { regex: /signature[:\s]*(.+)/i, label: 'Signature', type: 'text' },
-            { regex: /company[:\s]*(.+)/i, label: 'Company', type: 'text' },
-            { regex: /(?:job\s*)?title[:\s]*(.+)/i, label: 'Job Title', type: 'text' },
-            { regex: /position[:\s]*(.+)/i, label: 'Position', type: 'text' },
-            { regex: /age[:\s]*(.+)/i, label: 'Age', type: 'number' },
-            { regex: /(?:amount|total)[:\s]*(.+)/i, label: 'Amount', type: 'number' },
-            { regex: /(?:ssn|social\s*security)[:\s]*(.+)/i, label: 'SSN', type: 'text' },
-            { regex: /(?:id|identification)[:\s]*(.+)/i, label: 'ID Number', type: 'text' },
-            { regex: /license[:\s]*(.+)/i, label: 'License Number', type: 'text' },
-            { regex: /(?:emergency\s*)?contact[:\s]*(.+)/i, label: 'Emergency Contact', type: 'text' },
-            { regex: /(?:comments|notes|remarks)[:\s]*(.+)/i, label: 'Comments', type: 'textarea' }
-        ];
-        
-        // Process each line for field detection
-        lines.forEach((line, lineIndex) => {
-            const cleanLine = line.trim();
-            
-            // Skip very short lines or lines that look like headers
-            if (cleanLine.length < 3 || /^[A-Z\s]+$/.test(cleanLine)) {
-                return;
-            }
-            
-            // Check against patterns
-            for (const pattern of patterns) {
-                const match = cleanLine.match(pattern.regex);
-                if (match && match[1]) {
-                    const value = match[1].trim();
-                    
-                    // Validate the extracted value
-                    if (this.isValidFieldValue(value, pattern.type)) {
-                        fields.push({
-                            label: pattern.label,
-                            name: pattern.label.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-                            type: pattern.type,
-                            value: value,
-                            placeholder: `Enter ${pattern.label.toLowerCase()}`
-                        });
-                        break; // Don't match multiple patterns for the same line
-                    }
-                }
-            }
-            
-            // If no pattern matched, try to detect label-value pairs
-            if (!fields.some(f => cleanLine.includes(f.label))) {
-                const colonMatch = cleanLine.match(/^([^:]+):\s*(.+)$/);
-                const tabMatch = cleanLine.match(/^([^\t]+)\t+(.+)$/);
-                const spaceMatch = cleanLine.match(/^([A-Za-z\s]{3,20})\s{2,}(.+)$/);
-                
-                const match = colonMatch || tabMatch || spaceMatch;
-                if (match && match[1] && match[2]) {
-                    const label = match[1].trim();
-                    const value = match[2].trim();
-                    
-                    if (this.isValidFieldValue(value, 'text') && !this.isLikelyHeader(label)) {
-                        fields.push({
-                            label: this.formatLabel(label),
-                            name: label.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-                            type: this.detectFieldType(label, value),
-                            value: value,
-                            placeholder: `Enter ${label.toLowerCase()}`
-                        });
-                    }
-                }
-            }
+        // Sort words top-to-bottom, then left-to-right
+        words.sort((a, b) => {
+            const yDiff = a.bbox.y0 - b.bbox.y0;
+            if (Math.abs(yDiff) > 5) return yDiff; // 5px tolerance for same line
+            return a.bbox.x0 - b.bbox.x0;
         });
         
-        // Remove duplicates based on similar labels
+        const lines = this.groupWordsIntoLines(words);
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const lineWords = line.words;
+            const lineBbox = line.bbox;
+            const lineText = line.text;
+
+            if (lineWords.every(w => usedWords.has(w))) continue;
+            
+            // --- Strategy 1: Find "Label: Value" pairs on one line ---
+            const colonIndex = lineText.indexOf(':');
+            if (colonIndex > 0 && colonIndex < lineText.length -1) {
+                const labelText = lineText.substring(0, colonIndex).trim();
+                let valueText = lineText.substring(colonIndex + 1).trim();
+
+                if (this.isValidLabel(labelText)) {
+                     // Check if value continues on the next line (e.g., for addresses)
+                    if (i + 1 < lines.length) {
+                        const nextLine = lines[i+1];
+                        // If next line is indented relative to label, and doesn't look like a new label
+                        if (nextLine.bbox.x0 > lineBbox.x0 + 10 && !nextLine.text.includes(':')) {
+                            valueText += '\n' + nextLine.text;
+                            nextLine.words.forEach(w => usedWords.add(w));
+                        }
+                    }
+                    fields.push(this.createField(labelText, valueText));
+                    lineWords.forEach(w => usedWords.add(w));
+                    continue;
+                }
+            }
+
+            // --- Strategy 2: Find "Label" and "Value" separated by a large gap ---
+            for (let j = 0; j < lineWords.length - 1; j++) {
+                const labelPart = lineWords.slice(0, j + 1).map(w => w.text).join(' ');
+                const lastWordOfLabel = lineWords[j];
+                const nextWord = lineWords[j+1];
+                
+                const gap = nextWord.bbox.x0 - lastWordOfLabel.bbox.x1;
+                if (gap > 40 && this.isValidLabel(labelPart)) { // 40px is a significant gap
+                    const valuePart = lineWords.slice(j + 1).map(w => w.text).join(' ');
+                    if (valuePart) {
+                        fields.push(this.createField(labelPart, valuePart));
+                        lineWords.forEach(w => usedWords.add(w));
+                        break; // Field found, move to next line
+                    }
+                }
+            }
+            if (lineWords.every(w => usedWords.has(w))) continue;
+
+
+            // --- Strategy 3: Label on one line, value on the next line ---
+            if (i + 1 < lines.length) {
+                const nextLine = lines[i+1];
+                if (!nextLine.text.includes(':') && this.isValidLabel(lineText)) {
+                    // Heuristic: next line is indented OR current line is a short, typical label
+                    const isIndented = nextLine.bbox.x0 > lineBbox.x0 + 5;
+                    const isShortLabel = lineText.length < 25 && lineText.split(' ').length < 5;
+                    if (isIndented || isShortLabel) {
+                        fields.push(this.createField(lineText, nextLine.text));
+                        lineWords.forEach(w => usedWords.add(w));
+                        nextLine.words.forEach(w => usedWords.add(w));
+                        continue;
+                    }
+                }
+            }
+            
+            // --- Strategy 4: A standalone line that looks like a label gets an empty input field ---
+            if (this.isValidLabel(lineText)) {
+                fields.push(this.createField(lineText, ''));
+                lineWords.forEach(w => usedWords.add(w));
+            }
+        }
+        
         return this.removeDuplicateFields(fields);
     }
     
-    isValidFieldValue(value, type) {
-        if (!value || value.length === 0) return false;
+    groupWordsIntoLines(words) {
+        if (!words || words.length === 0) return [];
         
-        // Check for common OCR artifacts
-        if (/^[_\-\.]+$/.test(value)) return false;
-        if (value.length > 200) return false;
-        if (value.split('').every(char => char === value[0])) return false;
-        
-        // Type-specific validation
-        switch (type) {
-            case 'email':
-                return /\S+@\S+\.\S+/.test(value);
-            case 'tel':
-                return /[\d\-\(\)\s\+]{7,}/.test(value);
-            case 'number':
-                return /^\d+\.?\d*$/.test(value);
-            default:
-                return value.length >= 1 && value.length <= 100;
+        const lines = [];
+        let currentLineWords = [words[0]];
+
+        for (let i = 1; i < words.length; i++) {
+            const prevWord = words[i - 1];
+            const currentWord = words[i];
+            
+            const verticalMidpointPrev = prevWord.bbox.y0 + (prevWord.bbox.y1 - prevWord.bbox.y0) / 2;
+            const verticalMidpointCurr = currentWord.bbox.y0 + (currentWord.bbox.y1 - currentWord.bbox.y0) / 2;
+            
+            // If vertical midpoints are close, they are on the same line
+            if (Math.abs(verticalMidpointPrev - verticalMidpointCurr) < (prevWord.bbox.y1 - prevWord.bbox.y0) / 2) {
+                currentLineWords.push(currentWord);
+            } else {
+                lines.push(this.finalizeLine(currentLineWords));
+                currentLineWords = [currentWord];
+            }
         }
+        lines.push(this.finalizeLine(currentLineWords));
+
+        return lines;
     }
-    
-    isLikelyHeader(text) {
-        return /^[A-Z\s]+$/.test(text) && text.length > 15;
+
+    finalizeLine(words) {
+        if (!words || words.length === 0) return null;
+        words.sort((a,b) => a.bbox.x0 - b.bbox.x0); // ensure left-to-right order
+        const x0 = Math.min(...words.map(w => w.bbox.x0));
+        const y0 = Math.min(...words.map(w => w.bbox.y0));
+        const x1 = Math.max(...words.map(w => w.bbox.x1));
+        const y1 = Math.max(...words.map(w => w.bbox.y1));
+        const text = words.map(w => w.text).join(' ').trim();
+        return { words, bbox: { x0, y0, x1, y1 }, text };
+    }
+
+    isValidLabel(text) {
+        const cleanedText = text.trim();
+        if (cleanedText.length < 2 || cleanedText.length > 50) return false;
+        if (/^[\d\s\W_]+$/.test(cleanedText)) return false; // Not just numbers/symbols
+        if (!/[a-zA-Z]/.test(cleanedText)) return false; // Must contain a letter
+        if (/\S+@\S+\.\S+/.test(cleanedText)) return false; // Not an email
+        if (/[\d\-\(\)\s\+]{7,}/.test(cleanedText)) return false; // Not a phone number
+        return true;
+    }
+
+    createField(label, value) {
+        const cleanedLabel = this.formatLabel(label);
+        const cleanedValue = this.cleanOCRText(value);
+        
+        return {
+            label: cleanedLabel,
+            name: cleanedLabel.toLowerCase().replace(/[^a-z0-9]/g, '_').substring(0, 50),
+            type: this.detectFieldType(cleanedLabel, cleanedValue),
+            value: cleanedValue,
+            placeholder: `Enter ${cleanedLabel.toLowerCase()}`
+        };
     }
     
     formatLabel(label) {
         return label.replace(/([a-z])([A-Z])/g, '$1 $2')
                    .replace(/\b\w/g, l => l.toUpperCase())
+                   .replace(/[:]$/, '') // Remove trailing colon
                    .trim();
     }
     
@@ -393,10 +411,10 @@ class DocumentScanner {
         const lowerLabel = label.toLowerCase();
         
         if (lowerLabel.includes('email')) return 'email';
-        if (lowerLabel.includes('phone') || lowerLabel.includes('tel')) return 'tel';
+        if (lowerLabel.includes('phone') || lowerLabel.includes('tel') || lowerLabel.includes('mobile')) return 'tel';
         if (lowerLabel.includes('date') || /^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(value)) return 'date';
-        if (lowerLabel.includes('age') || lowerLabel.includes('amount') || /^\d+$/.test(value)) return 'number';
-        if (lowerLabel.includes('address') || lowerLabel.includes('comment') || value.length > 50) return 'textarea';
+        if (lowerLabel.includes('age') || lowerLabel.includes('amount') || lowerLabel.includes('total') || /^\d+$/.test(value)) return 'number';
+        if (lowerLabel.includes('address') || lowerLabel.includes('comment') || value.length > 60 || value.includes('\n')) return 'textarea';
         
         return 'text';
     }
