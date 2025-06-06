@@ -1,4 +1,4 @@
-import Tesseract from 'tesseract.js';
+import * as Tesseract from 'tesseract.js';
 
 class DocumentScanner {
     constructor() {
@@ -305,4 +305,3 @@ class DocumentScanner {
 document.addEventListener('DOMContentLoaded', () => {
     new DocumentScanner();
 });
-
