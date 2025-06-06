@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document OCR Scanner</title>
+    <link rel="stylesheet" href="styles.css">
+    <script type="importmap">
+    {
+        "imports": {
+            "tesseract.js": "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📄 Document Scanner</h1>
+            <p>Capture documents and extract text automatically</p>
+        </header>
+
+        <main>
+            <!-- Camera Section -->
+            <section class="camera-section" id="cameraSection">
+                <div class="camera-container">
+                    <video id="video" autoplay playsinline></video>
+                    <canvas id="canvas" style="display: none;"></canvas>
+                </div>
+                
+                <div class="camera-controls">
+                    <button id="startCamera" class="btn primary">
+                        📷 Start Camera
+                    </button>
+                    <button id="captureBtn" class="btn capture" style="display: none;">
+                        🔍 Capture & Scan
+                    </button>
+                    <button id="retakeBtn" class="btn secondary" style="display: none;">
+                        🔄 Retake
+                    </button>
+                </div>
+            </section>
+
+            <!-- Processing Section -->
+            <section class="processing-section" id="processingSection" style="display: none;">
+                <div class="processing-indicator">
+                    <div class="spinner"></div>
+                    <p>Processing document...</p>
+                    <div class="progress-bar">
+                        <div class="progress" id="progressBar"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Preview Section -->
+            <section class="preview-section" id="previewSection" style="display: none;">
+                <h2>📋 Extracted Form</h2>
+                <div class="captured-image">
+                    <img id="capturedImage" alt="Captured document">
+                </div>
+                
+                <div class="extracted-content">
+                    <div class="tabs">
+                        <button class="tab-btn active" data-tab="form">📝 Form</button>
+                        <button class="tab-btn" data-tab="text">📄 Raw Text</button>
+                    </div>
+                    
+                    <div class="tab-content">
+                        <div id="formTab" class="tab-panel active">
+                            <form id="extractedForm" class="generated-form">
+                                <!-- Generated form fields will go here -->
+                            </form>
+                            <div class="form-actions">
+                                <button id="downloadBtn" class="btn primary">💾 Download Data</button>
+                                <button id="newScanBtn" class="btn secondary">🆕 New Scan</button>
+                            </div>
+                        </div>
+                        
+                        <div id="textTab" class="tab-panel">
+                            <textarea id="rawText" readonly placeholder="Extracted text will appear here..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js" type="module"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4c6229722a6346bc8eb5cb0e5eae5d41","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
+</html>
+
