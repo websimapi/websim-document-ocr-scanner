@@ -102,23 +102,53 @@ class DocumentScanner {
             // Show captured image
             this.capturedImage.src = imageData;
             
-            const worker = await Tesseract.createWorker('eng');
-            
-            // Progress tracking
-            worker.addEventListener('progress', (info) => {
-                const progress = Math.round(info.progress * 100);
-                this.progressBar.style.width = `${progress}%`;
+            // Create worker with better configuration
+            const worker = await Tesseract.createWorker('eng', 1, {
+                logger: (m) => {
+                    if (m.status === 'recognizing text') {
+                        const progress = Math.round(m.progress * 100);
+                        this.progressBar.style.width = `${progress}%`;
+                    }
+                }
             });
             
-            const { data: { text } } = await worker.recognize(imageData);
+            // Configure worker for better accuracy
+            await worker.setParameters({
+                'tessedit_char_whitelist': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?@#$%^&*()_+-=[]{}|;:\'",.<>?/\\ \n\t',
+                'tessedit_pageseg_mode': '1', // Automatic page segmentation with OSD
+            });
+            
+            const { data: { text, confidence } } = await worker.recognize(imageData);
             await worker.terminate();
+            
+            console.log(`OCR Confidence: ${confidence}%`);
+            
+            if (!text || text.trim().length === 0) {
+                throw new Error('No text detected in the image. Please ensure the document is clearly visible and well-lit.');
+            }
+            
+            if (confidence < 30) {
+                console.warn('Low confidence OCR result, but proceeding...');
+            }
             
             // Process the extracted text
             this.processExtractedText(text);
             
         } catch (error) {
             console.error('OCR Error:', error);
-            alert('Error processing image. Please try again.');
+            
+            let errorMessage = 'Error processing image: ';
+            if (error.message.includes('No text detected')) {
+                errorMessage += error.message;
+            } else if (error.message.includes('network') || error.message.includes('fetch')) {
+                errorMessage += 'Network error. Please check your internet connection and try again.';
+            } else if (error.message.includes('worker')) {
+                errorMessage += 'OCR service failed to initialize. Please refresh the page and try again.';
+            } else {
+                errorMessage += 'Unable to process the image. Please ensure the document is clear, well-lit, and try taking another photo.';
+            }
+            
+            alert(errorMessage);
             this.retakePhoto();
         }
     }
